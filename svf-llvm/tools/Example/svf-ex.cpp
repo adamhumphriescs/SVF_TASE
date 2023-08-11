@@ -32,516 +32,340 @@
 #include "llvm/IR/Metadata.h"
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/Options.h"
+#include "SVF-LLVM/SymbolTableBuilder.h"
 
 using namespace llvm;
 using namespace std;
 using namespace SVF;
 
-void addMD( Instruction* inst)
-{
-    std::string str = "tainted";
-    inst->setMetadata(str, MDNode::get(inst->getContext(), llvm::None));
+void addMD( Instruction* inst) {
+  inst->setMetadata("tainted", MDNode::get(inst->getContext(), llvm::None));
 }
 
-/*
-void getMD(Instruction * inst)
-{
-    if (inst->getMetadata("tainted"))
-    {
-        cout << "yeaaah\n";
-    }
-    }*/
-/*!
- * An example to query alias results of two LLVM values
- */
-/*SVF::AliasResult aliasQuery(PointerAnalysis* pta, Value* v1, Value* v2)
-{
-    return pta->alias(v1,v2);
-}
-*/
-/*!
- * An example to print points-to set of an LLVM value
- */
-/*std::string printPts(PointerAnalysis* pta, Value* val)
-{
 
-    std::string str;
-    raw_string_ostream rawstr(str);
+Set<NodeID> traverseOnVFG_Sara(SVFG* vfg, Value* val) {
+  auto *pag = SVFIR::getPAG();
+  auto *svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
+  auto *pNode = pag->getGNode(pag->getValueNode(svfVal));
+  const auto *vNode = vfg->getDefSVFGNode(pNode);
 
-    NodeID pNodeId = pta->getPAG()->getValueNode(val);
-    const PointsTo& pts = pta->getPts(pNodeId);
-    for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-            ii != ie; ii++)
-    {
-        rawstr << " " << *ii << " ";
-        PAGNode* targetObj = pta->getPAG()->getGNode(*ii);
-        if(targetObj->hasValue())
-        {
-            rawstr << "(" <<*targetObj->getValue() << ")\t ";
-        }
-    }
+  Set<NodeID> visited;
+  FIFOWorkList<const VFGNode*> worklist;
+  Set<NodeID> icfgIDs;
 
-    return rawstr.str();
+  worklist.push(vNode);
+  visited.insert(vNode->getId());
+  icfgIDs.insert(vNode->getICFGNode()->getId());
 
-    }*/
+  printf("\ntraversing VFG\n");
+ 
+  /// Traverse along VFG
+  while ( !worklist.empty() ) {
+    const auto *vNode = worklist.pop();
 
-
-/*!
- * An example to query/collect all successor nodes from a ICFGNode (iNode) along control-flow graph (ICFG)
- */
-void traverseOnICFG(ICFG* icfg, const Instruction* inst)
-{
-    const SVFInstruction* svfInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(inst);
-    ICFGNode* iNode = icfg->getICFGNode(svfInst);
-    FIFOWorkList<const ICFGNode*> worklist;
-    Set<const ICFGNode*> visited;
-    worklist.push(iNode);
-
-    /// Traverse along VFG
-    while (!worklist.empty())
-    {
-        const ICFGNode* vNode = worklist.pop();
-        for (ICFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                    vNode->OutEdgeEnd(); it != eit; ++it)
-        {
-            ICFGEdge* edge = *it;
-            ICFGNode* succNode = edge->getDstNode();
-            if (visited.find(succNode) == visited.end())
-            {
-                visited.insert(succNode);
-                worklist.push(succNode);
-            }
-        }
-    }
-}
-
-/*!
- * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
- */
-void traverseOnVFG(const SVFG* vfg, Value* val)
-{
-    SVFIR* pag = SVFIR::getPAG();
-
-    SVFValue* svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
-    PAGNode* pNode = pag->getGNode(pag->getValueNode(svfVal));
-    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
-    FIFOWorkList<const VFGNode*> worklist;
-    Set<const VFGNode*> visited;
-    worklist.push(vNode);
-
-    /// Traverse along VFG
-    while (!worklist.empty())
-    {
-        const VFGNode* vNode = worklist.pop();
-        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                    vNode->OutEdgeEnd(); it != eit; ++it)
-        {
-            VFGEdge* edge = *it;
-            VFGNode* succNode = edge->getDstNode();
-            if (visited.find(succNode) == visited.end())
-            {
-                visited.insert(succNode);
-                worklist.push(succNode);
-            }
-        }
-    }
-
-    /// Collect all LLVM Values
-    for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
-    {
-        // const VFGNode* node = *it;
-        // //can only query VFGNode involving top-level pointers (starting with % or @ in LLVM IR)
-        // PAGNode* pNode = vfg->getLHSTopLevPtr(node);
-        // Value* val = pNode->getValue();
-    }
-}
-
-/*!
- * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
- */
-Set<NodeID> traverseOnVFG_Sara(SVFG* vfg, Value* val)
-{
-     SVFIR* pag = SVFIR::getPAG();
-     SVFValue* svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
-     printf("En el traverse\n");
-    //outs() << *val << "\n";
-    PAGNode* pNode = pag->getGNode(pag->getValueNode(svfVal));
-    printf("PNODE\n");
-    //outs()<< *(pNode->getValue()) << "\n";
-    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
-    Set<NodeID> visited;
-    FIFOWorkList<const VFGNode*> worklist;
-    //Set<const VFGNode*> visited;
-    Set<NodeID> icfgIDs;
-    worklist.push(vNode);
-    visited.insert(vNode->getId());
-    icfgIDs.insert(vNode->getICFGNode()->getId());
-
-    /// Traverse along VFG
-    while (!worklist.empty())
-    {
-        const VFGNode* vNode = worklist.pop();
-       
-        //outs()<< "VNODE"<< *(vNode->getValue()) <<" THE ICFGID " << vNode->getICFGNode()->getId() <<"\n";
-
-        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                    vNode->OutEdgeEnd(); it != eit; ++it)
-        {
-            VFGEdge* edge = *it;
-            
-            if (edge->isDirectVFGEdge())
-            {
-            NodeID succID = edge->getDstID();
-            VFGNode* succNode = edge->getDstNode();
-            NodeID s_icfgID = succNode->getICFGNode()->getId();
-            
-            //outs()<< "SUCCNODE"<<" THE ICFGID " << s_icfgID <<"\n";
-            if (visited.find(succID) == visited.end())// || s_visited.find(succNode) == s_visited.end())
-            {
-                //visited.insert(succNode);
-                visited.insert(succID);
-                worklist.push(succNode);
-               icfgIDs.insert(s_icfgID);
-                //outs()<<"Inside the succ if else\n";   
-            }
-            }
-            else{
-                VFGNode* succNode = edge->getDstNode();
-                outs()<< succNode->toString();
-            }
-        }
-        for (VFGNode::const_iterator it = vNode->InEdgeBegin(), eit =
-                    vNode->InEdgeEnd(); it != eit; ++it)
-        {
-            VFGEdge* edge = *it;
-            
-            if (edge->isDirectVFGEdge())
-            {
-            NodeID prevID = edge->getSrcID();
-            VFGNode* prevNode = edge->getSrcNode();
-            NodeID p_icfgID = prevNode->getICFGNode()->getId() ;
-            //outs()<< "PREVNODE"<<" THE ICFGID " << p_icfgID <<"\n";
-            if (visited.find(prevID) == visited.end() ) //|| p_visited.find(prevNode) == p_visited.end() )
-            {
-                visited.insert(prevID);
-                worklist.push(prevNode);
-                icfgIDs.insert(p_icfgID);
-                //outs()<<"Inside the prev if else\n";   
-            }
-            }
-            else{
-                VFGNode* prevNode = edge->getSrcNode();
-                outs()<< prevNode->toString();
-            }
-        }
-    }
-    return icfgIDs;
-}
-
-Set<NodeID> SymVal_succesors (const VFGNode* vNode, SVFG* vfg){
-    SVFIR* pag = SVFIR::getPAG();
-    outs()<<"En el symval successors\n";
-    Set<NodeID> visited;
-    FIFOWorkList<const VFGNode*> worklist;
-    Set<NodeID> icfgIDs;
-    worklist.push(vNode);
-    visited.insert(vNode->getId());
-    icfgIDs.insert(vNode->getICFGNode()->getId());
-
-    /// Traverse along VFG
-    while (!worklist.empty())
-    {
-        const VFGNode* vNode = worklist.pop();
-        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                    vNode->OutEdgeEnd(); it != eit; ++it)
-        {
-            bool constant = 1;
-            const VFGEdge* edge = *it;
-            NodeID succID = edge->getDstID();
-            VFGNode* succNode = edge->getDstNode();
-            NodeID icfgID = succNode->getICFGNode()->getId() ;
-            
-            outs()<< "succNode"<< succNode->toString() <<" and THE ICFGNode " << succNode->getICFGNode()->toString() <<"\n";
-            
-            //If a tainted variable gets overwritten with constant data, 
-            //then taint it but do not traverse any further down this path.
-            if (StmtSVFGNode* stmtNode = dyn_cast<StmtSVFGNode>(succNode)) {   
-                if (SVFUtil::isa<StoreStmt>(stmtNode->getPAGEdge())){
-                    const SVFInstruction* instr = stmtNode->getInst();
-		    const SVFValue* val = dyn_cast<SVFCallInst>(instr)->getArgOperand(0);
-                    PAGNode* pNode = pag->getGNode(pag->getValueNode(val));
-		    //                    if (pNode->isConstantData())
-		    if( pNode->isConstDataOrAggDataButNotNullPtr() )
-                    {
-                         constant = 0;
-                         icfgIDs.insert(icfgID);
-                         outs()<< "It is constant Data: "<< instr;
-                    }  
-                }
-            }
-            if (visited.find(succID) == visited.end() && constant) 
-            {
-                visited.insert(succID);
-                worklist.push(succNode);
-                icfgIDs.insert(icfgID);
-                outs()<<"Inserting Node "<< succNode->toString() <<" \n";   
-            } 
-        }
-    }
-    return icfgIDs;
-}
-
-const VFGNode* verify_succ(const VFGNode* vNode, Set<NodeID> &visited)
-{
-    outs()<<"Printing vnode in verifysucc " <<vNode->toString()<< "\n";
-    for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                vNode->OutEdgeEnd(); it != eit; ++it)
-    {
-        VFGEdge* edge = *it;
-        NodeID succID = edge->getDstID();
-        VFGNode* succNode = edge->getDstNode();
-        outs()<<"Printing succNode in verifysucc" <<succNode->toString()<< "\n"; 
-        if (edge->isDirectVFGEdge() && (visited.find(succID) == visited.end())){
-            if (StmtSVFGNode* stmtNode = dyn_cast<StmtSVFGNode>(succNode)) {   
-                if (SVFUtil::isa<StoreStmt>(stmtNode->getPAGEdge())){
-                    visited.insert(succID);
-                    outs()<<"Printing store succNode in verifysucc" <<succNode->toString()<< "\n"; 
-                    return succNode;
-                }
-            }
-        }  
-    }
-    return vNode;   
-}
-const VFGNode* iterate_predecessors(const VFGNode* vNode, Set<NodeID> &visited)
-{
+    printf("checking vNode: %u\n", vNode->getICFGNode()->getId());
     
-    FIFOWorkList<const VFGNode*> worklist;
-    worklist.push(vNode);
-    /// Traverse along VFG
-    while (!worklist.empty())
-    {  
-        vNode = worklist.pop();
-        outs()<<"Printing vnode in iterate" <<vNode->toString()<< "\n";
-        for (VFGNode::const_iterator it = vNode->InEdgeBegin(), eit =
-                    vNode->InEdgeEnd(); it != eit; ++it)
-        {
-            VFGEdge* edge = *it;
-            NodeID prevID = edge->getSrcID();
-            VFGNode* prevNode = edge->getSrcNode();
-            if ((visited.find(prevID) == visited.end()) && edge->isDirectVFGEdge())
-            {  
-                visited.insert(prevID);
-                worklist.push(prevNode);
-                outs()<<"Printing pushed worklist " <<prevNode->toString()<< "\n"; 
-            }
-        }    
-    }
-    return vNode;   
-}
-const VFGNode* find_defSymVal (Value* val, SVFG* vfg){
-    SVFIR* pag = SVFIR::getPAG();
-    outs()<<"En el find defSymVal\n";
-    SVFValue* svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
-    PAGNode* pNode = pag->getGNode(pag->getValueNode(svfVal));
-    const VFGNode* temp;
-    Set<NodeID> visited;
-    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
-    temp = iterate_predecessors(vNode, visited);
-    outs()<<"Printing temp node " <<temp->toString()<< "\n";
-    vNode = verify_succ( temp, visited);
-    outs()<<"Printing verification node " <<vNode->toString()<< "\n";
-    while (temp != vNode)
-    {
-        temp = iterate_predecessors(vNode, visited);
-        outs()<<"Printing while inside temp node " <<temp->toString()<< "\n";
-        vNode = verify_succ(temp, visited);
-        outs()<<"Printing while inside verification node " <<vNode->toString()<< "\n";
+    for ( auto *edge : vNode->getOutEdges() ) {
+      if ( edge->isDirectVFGEdge() ) {
+        auto succID = edge->getDstID();
+        auto *succNode = edge->getDstNode();
+	auto s_icfgID = succNode->getICFGNode()->getId();
+
+	printf("\tdst Node: %u\n", s_icfgID);
+	
+	if ( visited.find(succID) == visited.end() ) {
+	  visited.insert(succID);
+	  worklist.push(succNode);
+	  icfgIDs.insert(s_icfgID);
+	  printf("\tdst Node %u is new use\n", s_icfgID);
+	}
+      }
     }
 
-    outs()<<"Printing first node " <<vNode->toString()<< "\n";
-    return vNode;
+    for ( auto *edge : vNode->getInEdges() ) {
+      if ( edge->isDirectVFGEdge() ) {
+        auto prevID = edge->getSrcID();
+        auto *prevNode = edge->getSrcNode();
+	auto p_icfgID = prevNode->getICFGNode()->getId();
+
+	printf("\tsrc Node: %u\n", p_icfgID);
+	
+	if (visited.find(prevID) == visited.end() ) {
+	  visited.insert(prevID);
+	  worklist.push(prevNode);
+	  icfgIDs.insert(p_icfgID);
+	  printf("\tsrc Node %u is new use\n", p_icfgID);
+	}
+      }
+    }
+  }
+    
+  return icfgIDs;
 }
+
+
+Set<NodeID> SymVal_successors(const VFGNode* vNode, SVFG* vfg) {
+  auto *pag = SVFIR::getPAG();
+  
+  Set<NodeID> visited;
+  FIFOWorkList<const VFGNode*> worklist;
+  Set<NodeID> icfgIDs;
+    
+  worklist.push(vNode);
+  visited.insert(vNode->getId());
+  icfgIDs.insert(vNode->getICFGNode()->getId());
+
+  printf("\ntraversing successors\n");
+
+  /// Traverse along VFG
+  while (!worklist.empty()) {
+    const auto *vNode = worklist.pop();
+
+    printf("Searching %lu successors for Node %u, ICFG_ID: %u\n", vNode->getOutEdges().size(), vNode->getId(), vNode->getICFGNode()->getId());
+    
+    for ( auto *edge : vNode->getOutEdges() ) {
+      bool setConstant = false;
+	    
+      auto *succNode = edge->getDstNode();
+      auto succID = edge->getDstID();
+      auto icfgID = succNode->getICFGNode()->getId();
+
+      printf("SuccID: %u, icfgID: %u\n", succID, icfgID);
+      
+      //If a tainted variable gets overwritten with constant data, 
+      //then taint it but do not traverse any further down this path.
+      if ( auto *stmtNode = dyn_cast<StmtSVFGNode>(succNode) ) {   
+	if ( SVFUtil::isa<StoreStmt>( stmtNode->getPAGEdge() ) ) {
+	  const auto *val = stmtNode->getPAGEdge()->getSrcNode()->getValue();
+	  auto *pNode = pag->getGNode(pag->getValueNode(val));
+
+	  if( pNode->isConstDataOrAggDataButNotNullPtr() ) {
+	    setConstant = true;
+	    icfgIDs.insert(icfgID);
+	    printf("successor node %u overwrites with constant data\n", icfgID);
+	  }
+	}
+      }
+	    
+      if ( visited.find(succID) == visited.end() && !setConstant ) {
+	visited.insert(succID);
+	worklist.push(succNode);
+	icfgIDs.insert(icfgID);
+	printf("Adding successor %u to worklist\n", succID);
+      } 
+    }
+  }
+  return icfgIDs;
+}
+
+
+// given Set of nodes 'visited' and starting point vNode, search forward for the earliest Store statement,
+// adding it to visited and return it
+// if none found, return vNode
+const VFGNode* verify_succ(const VFGNode* vNode, Set<NodeID> &visited) {
+  printf("\nverifying %lu successors of node %u\n", vNode->getOutEdges().size(), vNode->getId());
+  
+  for ( auto *edge : vNode->getOutEdges() ) {
+    auto succID = edge->getDstID();
+    auto* succNode = edge->getDstNode();
+
+    if ( edge->isDirectVFGEdge() && (visited.find(succID) == visited.end()) ) {
+      if ( auto *stmtNode = dyn_cast<StmtSVFGNode>(succNode) ) {   
+	if ( SVFUtil::isa<StoreStmt>(stmtNode->getPAGEdge()) ) {
+	  printf("Store statement found in successors: node %u\n", succID);
+	  visited.insert(succID);
+	  return succNode;
+	}
+      }
+    }  
+  }
+  return vNode;
+}
+
+
+// find all predecessors of vNode in the Value Flow Graph, store in visited
+// return last node found
+const VFGNode* iterate_predecessors(const VFGNode* vNode, Set<NodeID> &visited) {
+  FIFOWorkList<const VFGNode*> worklist;
+  worklist.push(vNode);
+
+  printf("\nIterating predecessors of node %u, ICFG_ID: %u\n", vNode->getId(), vNode->getICFGNode()->getId());
+  
+  /// Traverse along VFG
+  while ( !worklist.empty() ) {  
+    vNode = worklist.pop();
+
+    printf("checking %lu in-edges of node %u\n", vNode->getInEdges().size(), vNode->getId());
+    
+    for ( auto *edge : vNode->getInEdges() ) {
+      auto prevID = edge->getSrcID();
+      auto *prevNode = edge->getSrcNode();
+      
+      if ( ( visited.find(prevID) == visited.end() ) && edge->isDirectVFGEdge() && prevNode->getNodeKind() == VFGNode::ARet ) {
+	printf("adding predecessor node from edge (%u -> %u) / (%u -> %u)\n", prevID, vNode->getId(), prevNode->getICFGNode()->getId(), vNode->getICFGNode()->getId());
+	visited.insert(prevID);
+	worklist.push(prevNode);
+      }
+    }    
+  }
+  return vNode;   
+}
+
+
+const VFGNode* find_defSymVal(Value* val, SVFG* vfg){
+  auto *pag = SVFIR::getPAG();
+  auto *svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
+  auto *pNode = pag->getGNode(pag->getValueNode(svfVal));
+
+  printf("\nfind symval def\n");
+
+  Set<NodeID> visited;
+  const auto *vNode = vfg->getDefSVFGNode(pNode);
+  
+  const auto *temp = iterate_predecessors(vNode, visited);
+  vNode = verify_succ(temp, visited);
+
+  while ( temp != vNode ) {
+    temp = iterate_predecessors(vNode, visited);
+    vNode = verify_succ(temp, visited);
+  }
+
+  return vNode;
+}
+
 
 CallInst* find_callSite(Module* mM){
-    printf("en el find callsite\n");
-    auto &FL = mM->getFunctionList();
-    for (Function &Fn : FL){
-        cout<< Fn.getName().data() << "\n";
-        for (BasicBlock &BB : Fn){
-            for (Instruction &Inst : BB)
-            {
-                if (isa<CallInst>(&Inst)) {
-                    std::string str;
-                    llvm::raw_string_ostream ss(str);
-                    ss << Inst;
-                    CallInst* cs;
-                    outs()<< "\nhola"<<str <<"\n";
-                    cs = dyn_cast<CallInst>(&Inst);
-                    // Function *fun = cs->getCalledFunction();
-                    if (str.find("make_byte_symbolic") != std::string::npos){ 
-                        outs()<<"deberia pero no? \n";
-                        
-                        outs()<<"THIS IS THE CS HOPEFULLY   ****** " <<Inst <<"\n";
-                        return cs;
-                        //return dyn_cast<Value> (&Inst);
-                    }
-                }
-            }
-        }
+  for ( auto &Fn : mM->getFunctionList() ) {
+    for ( auto &BB : Fn ) {
+      for ( auto &Inst : BB ) {
+	if ( isa<CallInst>(&Inst) ) {
+	  std::string str;
+	  llvm::raw_string_ostream ss(str);
+	  ss << Inst;
+		    
+	  if ( str.find("make_byte_symbolic") != std::string::npos ){ 
+	    return dyn_cast<CallInst>(&Inst);
+	  }
+	}
+      }
     }
-    return nullptr;
-
+  }
+  return nullptr;
 }
+
 
 void taint_instructions_sara (CallInst* cs, Value* val, ICFG* icfg,  Module* mM, Set<NodeID> icfgIDs, Function * Fn, bool &set , bool &beginTaint){ 
-    outs()<< "********************************* TAINTING INSIDE FUNCTION "<< Fn->getName() << " ************************************\n";
-    std::string str1 = "taintedFun";
-    Fn->setMetadata(str1, MDNode::get(Fn->getContext(), llvm::None));
-    for (BasicBlock &BB : *Fn){
-        for (Instruction &Inst : BB)
-        {
-            if (cs == dyn_cast<CallInst>(&Inst))
-            {
-                beginTaint = 1;
-                outs()<<"Found make sym \n";
-            }  
-            else if (isa<CallInst>(&Inst))
-            {
-                CallInst* cInst;
-                cInst = dyn_cast<CallInst>(&Inst);
-                StringRef funName = cInst->getCalledFunction()->getName();
-                // temp.push_back(mM->getFunction(funName));
-                taint_instructions_sara ( cs, val, icfg, mM, icfgIDs, mM->getFunction(funName), set, beginTaint);
-                outs()<< "********************************* RETURNING TO FUNCTION "<< Fn->getName() << " ************************************\n";
-                //continue;
-            }
-            const SVFInstruction* svfInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(&Inst);
-            NodeID id = icfg->getICFGNode(svfInst)->getId();
-            outs() << "BeginTaint "<< beginTaint << "In ID list? "<< (icfgIDs.find(id) != icfgIDs.end()) << "\n";
+  Fn->setMetadata("taintedFun", MDNode::get(Fn->getContext(), llvm::None));
+  
+  printf("\n%lu ICFG IDs\n", icfgIDs.size());
+  printf("\ntainting in fxn %s\n", std::string(Fn->getName()).c_str());
+  
+  for ( auto &BB : *Fn ) {    
+    for ( auto &Inst : BB ) {
 
-            if (icfgIDs.find(id) != icfgIDs.end() && beginTaint )
-            {
-                addMD(&Inst);
-                
-                if (Inst.getOpcode() == 53)
-                {
-                    outs() << "Set \n";
-                    set = 1;
-                }
-                outs() << Inst << "and op "<< Inst.getOpcodeName() << "\n";
-                //std::cout <<"ICFG ID of an INST"<< id << "\n";
-                //addedMD.insert(id);
-                //getMD(&Inst);
-            }
-            else if (set)
-            {
-                addMD(&Inst);
-                set = 0;
-                outs() << Inst << "and op "<< Inst.getOpcodeName() << "\n";
-            }
-        }
+      // start tainting if we reach the make_byte_symbolic callsite
+      if ( cs == dyn_cast<CallInst>(&Inst) ) {
+	printf("Encountered MBS callsite, starting taint propogation\n");
+	beginTaint = true;
+
+      // regular callsite -> check instructions for the call
+      } else if ( isa<CallInst>(&Inst) ) {
+
+	auto *cInst = dyn_cast<CallInst>(&Inst);
+	StringRef funName = cInst->getCalledFunction()->getName();
+
+	printf("\ndropping into call %s\n", std::string(funName).c_str());
+	taint_instructions_sara( cs, val, icfg, mM, icfgIDs, mM->getFunction(funName), set, beginTaint );
+	printf("exiting callsite\n\n");
+      }
+	    
+      const auto *svfInst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(&Inst);
+      auto id = icfg->getICFGNode(svfInst)->getId();
+
+      printf("checking ICFG_ID: %u\n", id);
+
+      // instr uses the tainted value
+      if ( icfgIDs.find(id) != icfgIDs.end() && beginTaint ) {
+	printf("tainting instruction\n");
+	addMD(&Inst);
+
+	// opcode 53 is a cmp where the next instr depends on the cmp
+	// but svf doesn't link the two
+	if ( Inst.getOpcode() == 53 ) {
+	  set = true;
+	}
+      } else if ( set ) {
+	printf("tainting instruction\n");
+        addMD(&Inst);
+	set = false;
+      }
     }
+  }
 }
 
-void taint_functions_sara (SVFG* vfg, ICFG* icfg, Module* mM){
-    CallInst* cs = find_callSite(mM);
-    outs()<<"found callsite, getting callsite operand\n";
-    Value* val = cs->getArgOperand(0);
-    outs()<<"got callsite operand\n";
-    Set<NodeID> icfgIDs = SymVal_succesors(find_defSymVal(val, vfg), vfg);
-    // bool beginTaint = 0;
-    Function *Fn =  mM->getFunction("main");
-    if (Fn == nullptr)
-    {
-     Fn =  mM->getFunction("begin_target_inner");   
-    }
-    bool beginTaint = 0;
-    bool set =0;
-    //bool foundFunc = 1;
-    outs()<< "********************************* checking if segfault "<< Fn->getName() << " ************************************\n";
+void taint_functions_sara (SVFG* vfg, ICFG* icfg, Module* mM) {
+  // find callsite for fxn void make_byte_symbolic(void*)
+  auto *cs = find_callSite(mM);
+  if ( cs == nullptr ) {
+    return;
+  }
+  
+  auto *val = cs->getArgOperand(0);
+  auto icfgIDs = SymVal_successors(find_defSymVal(val, vfg), vfg);
+  auto *Fn =  mM->getFunction("main");
     
-    taint_instructions_sara(cs, val, icfg, mM, icfgIDs, Fn, set, beginTaint);
+  if ( Fn == nullptr ) {
+    Fn = mM->getFunction("begin_target_inner");   
+  }
+    
+  bool beginTaint = false;
+  bool set = false;
 
+  taint_instructions_sara(cs, val, icfg, mM, icfgIDs, Fn, set, beginTaint);
 }
 
-void taint_everything (Module* mM){
-    printf("en el find callsite\n");
-    auto &FL = mM->getFunctionList();
-    for (Function &Fn : FL){
-        for (BasicBlock &BB : Fn){
-            for (Instruction &Inst : BB)
-            {
-                addMD(&Inst);
-            }
-        }
-    }
-}
-int main(int argc, char ** argv)
-{
-    int arg_num = 0;
-    char **arg_value = new char*[argc];
-    std::vector<std::string> moduleNameVec;
-    LLVMUtil::processArguments(argc, argv, arg_num, arg_value, moduleNameVec);
-    cl::ParseCommandLineOptions(arg_num, arg_value,
-                                "Whole Program Points-to Analysis\n");
 
-    if (Options::WriteAnder() == "ir_annotator")
-    {
-        LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
-    }
 
-    SVFModule* svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
-    //    svfModule->buildSymbolTableInfo();
+int main(int argc, char ** argv) {
+  auto moduleNameVec = OptionBase::parseOptions(argc, argv, "Whole Program Points-to Analysis", "[options] <input-bitcode...>");
+  auto *mset = LLVMModuleSet::getLLVMModuleSet();
+  
+  if ( Options::WriteAnder() == "ir_annotator" ) {
+    mset->preProcessBCs(moduleNameVec);
+  }
 
-    /// Build Program Assignment Graph (SVFIR)
-    SVFIRBuilder builder(svfModule);
-    SVFIR* pag = builder.build();
+  auto *svfModule = LLVMModuleSet::buildSVFModule(moduleNameVec);
 
-    /// Create Andersen's pointer analysis
-    Andersen* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+  /// Build Program Assignment Graph (SVFIR)
+  SVFIRBuilder builder(svfModule);
+  auto *pag = builder.build();
 
-    /// Query aliases
-    /// aliasQuery(ander,value1,value2);
+  /// Create Andersen's pointer analysis
+  auto *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
 
-    /// Print points-to information
-    /// printPts(ander, value1);
+  /// Call Graph
+  auto* callgraph = ander->getPTACallGraph();
 
-    /// Call Graph
-    PTACallGraph* callgraph = ander->getPTACallGraph();
+  /// ICFG
+  auto* icfg = pag->getICFG();
 
-    /// ICFG
-    ICFG* icfg = pag->getICFG();
-    //icfg->dump("icfg");
+  /// Value-Flow Graph (VFG)
+  auto* vfg = new VFG(callgraph);
 
-    /// Value-Flow Graph (VFG)
-    VFG* vfg = new VFG(callgraph);
+  /// Sparse value-flow graph (SVFG)
+  SVFGBuilder svfBuilder(true);
+  auto* svfg = svfBuilder.buildFullSVFG(ander);
+  auto *mM = mset->getMainLLVMModule();
+  taint_functions_sara(svfg, icfg, mM);
 
-    /// Sparse value-flow graph (SVFG)
-    SVFGBuilder svfBuilder(true);
-    SVFG* svfg = svfBuilder.buildFullSVFG(ander);
+  mset->dumpModulesToFile(".svf.bc");
+  
+  delete vfg;
 
-    /// Collect uses of an LLVM Value
-    
-    Module * mM;
-    mM = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
-    
-    taint_functions_sara(svfg, icfg, mM);
-    //taint_everything(mM);
-    printf("finished\n");
-    /// Collect all successor nodes on ICFG
-    /// traverseOnICFG(icfg, value);
-
-    // clean up memory
-    delete vfg;
-    delete svfg;
-    AndersenWaveDiff::releaseAndersenWaveDiff();
-    SVFIR::releaseSVFIR();
-
-    LLVMModuleSet::getLLVMModuleSet()->dumpModulesToFile(".svf.bc");
-    SVF::LLVMModuleSet::releaseLLVMModuleSet();
-
-    llvm::llvm_shutdown();
-    return 0;
+  AndersenWaveDiff::releaseAndersenWaveDiff();
+  SVFIR::releaseSVFIR();
+  SVF::LLVMModuleSet::releaseLLVMModuleSet();
+  llvm::llvm_shutdown();
+  return 0;
 }
 
